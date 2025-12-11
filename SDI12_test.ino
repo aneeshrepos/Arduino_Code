@@ -9,8 +9,6 @@ unsigned long measurementTimestamp = 0;
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {}
-
   Serial.println("SDI-12 Mock Sensor (Reports ms uptime)");
 
   sdi12.begin();
