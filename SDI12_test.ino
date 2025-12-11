@@ -1,6 +1,6 @@
 #include <SDI12.h>
 
-#define SDI12_DATA_PIN 4  // SDI-12 bus pin
+#define SDI12_DATA_PIN 2  // SDI-12 bus pin
 SDI12 sdi12(SDI12_DATA_PIN);
 
 char sensorAddress = '0';  // Current sensor address
@@ -22,7 +22,7 @@ void loop() {
   if (sdi12.available()) {
     String cmd = sdi12.readStringUntil('!');
     cmd += '!';
-    cmd.trim();?!
+    cmd.trim();
 
     Serial.print("Received command: ");
     Serial.println(cmd);
