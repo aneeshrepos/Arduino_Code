@@ -19,14 +19,22 @@ const float C = 0.0000000876741;
 // ---- Function to compute temperature in °C ----
 float readTemperatureC() {
   int adc = analogRead(THERM_PIN);
-  float v = adc * (5.0 / 1023.0);
-  if (v <= 0.01) return NAN;
+  if (adc <= 0 || adc >= 1023) return NAN;
 
-  float rTherm = R_FIXED * (5.0 / v - 1.0);
+  // Low-side NTC divider math
+  float rTherm = R_FIXED * ((float)adc / (1023.0 - adc));
+
+  // Steinhart–Hart coefficients fitted to 10K3MCD1
+  const float A = 0.001129098;
+  const float B = 0.000234132;
+  const float C = 0.0000000876505;
+
   float lnR = log(rTherm);
-  float tempK = 1.0 / (A + B * lnR + C * pow(lnR, 3));
+  float tempK = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+
   return tempK - 273.15;
 }
+
 
 // ---- Helper for sending SDI-12 response ----
 void sendResponse(String response) {
