@@ -1,30 +1,33 @@
 #include <SDI12.h>
+#include <math.h>
 
-#define SDI12_DATA_PIN 2   // SDI-12 bus pin
-#define THERM_PIN A0       // Thermistor voltage divider output
-#define R_FIXED 10000.0    // Fixed resistor value (10kΩ)
+#define SDI12_DATA_PIN 2
+#define R_FIXED 10000.0    // 10k fixed resistor
+
+// Thermistor pins
+const uint8_t thermPins[3] = {A0, A1, A2};
 
 SDI12 sdi12(SDI12_DATA_PIN);
 
-char sensorAddress = '0';  // Sensor SDI-12 address
+char sensorAddress = '0';
 bool measurementReady = false;
-float lastTemperature = 0.0;
-unsigned long measurementTimestamp = 0;
 
-// ---- Steinhart-Hart coefficients for common 10k NTC thermistor ----
-const float A = 0.001129148;
-const float B = 0.000234125;
-const float C = 0.0000000876741;
+// Steinhart–Hart coefficients fitted to 10K3MCD1
+const float A = 0.001129098;
+const float B = 0.000234132;
+const float C = 0.0000000876505;
 
-// ---- Function to compute temperature in °C ----
-float readTemperatureC() {
-  int adc = analogRead(THERM_PIN);
-  float v = adc * (5.0 / 1023.0);
-  if (v <= 0.01) return NAN;
+// ---- Read thermistor on given pin, return °C ----
+float readTemperatureC(uint8_t pin) {
+  int adc = analogRead(pin);
+  if (adc <= 0 || adc >= 1023) return NAN;
 
-  float rTherm = R_FIXED * (5.0 / v - 1.0);
+  // Low-side NTC divider math
+  float rTherm = R_FIXED * ((float)adc / (1023.0 - adc));
+
   float lnR = log(rTherm);
-  float tempK = 1.0 / (A + B * lnR + C * pow(lnR, 3));
+  float tempK = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+
   return tempK - 273.15;
 }
 
@@ -33,17 +36,20 @@ void sendResponse(String response) {
   response += "\r\n";
   Serial.print("Sending response: ");
   Serial.print(response);
-  delay(12);
+  delay(12);  // SDI-12 settle time
   sdi12.sendResponse(response);
 }
 
 void setup() {
   Serial.begin(115200);
+  while (!Serial) {}
 
+  Serial.println("SDI-12 3x Thermistor Sensor (10K3MCD1)");
 
-  Serial.println("SDI-12 Thermistor Sensor (Reports temperature)");
+  for (uint8_t i = 0; i < 3; i++) {
+    pinMode(thermPins[i], INPUT);
+  }
 
-  pinMode(THERM_PIN, INPUT);
   sdi12.begin();
   sdi12.forceListen();
   delay(200);
@@ -62,43 +68,48 @@ void loop() {
     if (cmd == "?!" || cmd == String(sensorAddress) + "?!") {
       sendResponse(String(sensorAddress));
     }
+
     // ---- Change address (aAb!) ----
     else if (cmd.length() == 4 && cmd[1] == 'A' && cmd[3] == '!') {
-      char currentAddr = cmd[0];
-      char newAddr = cmd[2];
-      if (currentAddr == sensorAddress) {
-        sensorAddress = newAddr;
-        sendResponse(String(newAddr));
+      if (cmd[0] == sensorAddress) {
+        sensorAddress = cmd[2];
+        sendResponse(String(sensorAddress));
       }
     }
+
     // ---- Measurement request (aM!) ----
     else if (cmd == String(sensorAddress) + "M!") {
       Serial.println("Measurement command received");
 
-      // Respond with wait time (001) and number of values (1)
-      sendResponse(String(sensorAddress) + "0011");
-
-      measurementTimestamp = millis();
+      // 001 seconds, 3 values
+      sendResponse(String(sensorAddress) + "0013");
       measurementReady = true;
     }
+
     // ---- Data request (aD0!) ----
     else if (cmd == String(sensorAddress) + "D0!" && measurementReady) {
       Serial.println("Sending temperature data");
 
-      lastTemperature = readTemperatureC();
+      float t[3];
+      for (uint8_t i = 0; i < 3; i++) {
+        t[i] = readTemperatureC(thermPins[i]);
+      }
 
       String dataResponse = String(sensorAddress);
-      if (isnan(lastTemperature)) {
-        dataResponse += "+999.9";  // Error value
-      } else {
-        dataResponse += (lastTemperature >= 0 ? "+" : "") + String(lastTemperature, 2);
+
+      for (uint8_t i = 0; i < 3; i++) {
+        if (isnan(t[i])) {
+          dataResponse += "+999.9";
+        } else {
+          dataResponse += (t[i] >= 0 ? "+" : "") + String(t[i], 2);
+        }
       }
 
       sendResponse(dataResponse);
       measurementReady = false;
     }
 
-    // ---- Clear buffer and resume listening ----
+    // ---- Clear buffer ----
     while (sdi12.available()) sdi12.read();
     sdi12.forceListen();
   }
