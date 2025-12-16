@@ -1,6 +1,6 @@
 #include <SDI12.h>
 
-#define SDI12_DATA_PIN 4   // SDI-12 bus pin
+#define SDI12_DATA_PIN 2   // SDI-12 bus pin
 #define THERM_PIN A0       // Thermistor voltage divider output
 #define R_FIXED 10000.0    // Fixed resistor value (10kΩ)
 
